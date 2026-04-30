@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Cloud Menu Editor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --gold: #D4AF37; --espresso: #2C1B18; --cream: #F9F5F2; }
+        body { font-family: 'Inter', sans-serif; background: var(--cream); color: var(--espresso); margin: 0; padding-bottom: 100px; }
+        .login-screen { height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--espresso); }
+        .login-card { background: white; padding: 40px; border-radius: 20px; width: 90%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .admin-panel { display: none; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .active { display: block; }
+        input, textarea { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
+        .category-card { background: white; border-radius: 15px; padding: 20px; margin-bottom: 30px; border-left: 6px solid var(--gold); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .item-row { display: flex; gap: 15px; background: #fff; padding: 15px; border: 1px solid #eee; border-radius: 10px; margin-bottom: 10px; }
+        .img-preview { width: 80px; height: 80px; background: #eee; border-radius: 8px; object-fit: cover; }
+        .btn { cursor: pointer; border: none; border-radius: 8px; font-weight: 700; transition: 0.3s; padding: 12px; }
+        .btn-main { background: var(--espresso); color: white; width: 100%; }
+        .btn-save { background: #10b981; color: white; padding: 20px; font-size: 18px; width: 100%; max-width: 800px; }
+        .delete-btn { color: #ef4444; background: none; font-size: 12px; cursor: pointer; border: none; margin-top: 5px; }
+        .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 15px; border-top: 2px solid var(--gold); display: flex; justify-content: center; z-index: 1000; }
+    </style>
+</head>
+<body>
+
+    <div id="loginScreen" class="login-screen">
+        <div class="login-card">
+            <h2 style="margin-bottom: 5px;">Cafe Admin</h2>
+            <p style="font-size: 14px; color: #666; margin-bottom: 20px;">Secure Cloud Access</p>
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="password" placeholder="Password">
+            <button class="btn btn-main" onclick="handleLogin()">Sign In</button>
+        </div>
+    </div>
+
+    <div id="adminPanel" class="admin-panel">
+        <div style="display:flex; justify-content: space-between; align-items:center;">
+            <h1>Menu Editor</h1>
+            <button onclick="handleLogout()" style="color:red; background:none; border:none; cursor:pointer;">Logout</button>
+        </div>
+        <button class="btn btn-main" style="margin-bottom:20px; width:auto;" onclick="addCategory()">+ New Category</button>
+        <div id="editor-container"></div>
+    </div>
+
+    <div class="bottom-bar" id="saveBar" style="display:none;">
+        <button class="btn btn-save" onclick="saveMenu()">Save Changes to Cloud</button>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // --- PASTE YOUR FIREBASE CONFIG BELOW ---
+        
+        const firebaseConfig = {
+  apiKey: "AIzaSyDrS3qQrsUX9uZ2feirxypuuZAOr8PNGtI",
+  authDomain: "cofee-shop-26e73.firebaseapp.com",
+  projectId: "cofee-shop-26e73",
+  storageBucket: "cofee-shop-26e73.firebasestorage.app",
+  messagingSenderId: "1078896374249",
+  appId: "1:1078896374249:web:e633362be7cca4a9479b78",
+  measurementId: "G-KLGNXCJXBG"
+};
+        // ---------------------------------------
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        let menuData = {};
+
+        window.handleLogin = async () => {
+            try {
+                await signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('password').value);
+            } catch (e) { alert("Error: " + e.message); }
+        };
+
+        window.handleLogout = () => signOut(auth).then(() => location.reload());
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('adminPanel').classList.add('active');
+                document.getElementById('saveBar').style.display = 'flex';
+                loadMenu();
+            }
+        });
+
+        async function loadMenu() {
+            const snap = await getDoc(doc(db, "settings", "menu"));
+            menuData = snap.exists() ? snap.data().categories : { "Hot Drinks": [] };
+            renderEditor();
+        }
+
+        window.renderEditor = () => {
+            const container = document.getElementById('editor-container');
+            container.innerHTML = '';
+            for (let cat in menuData) {
+                let html = `<div class="category-card">
+                    <input type="text" value="${cat}" onchange="renameCat('${cat}', this.value)" style="font-weight:800; font-size:20px; border:none; border-bottom:1px solid #eee;">
+                    <div id="items-${cat}">`;
+                
+                menuData[cat].forEach((item, i) => {
+                    html += `<div class="item-row">
+                        <img src="${item.image || 'https://via.placeholder.com/80'}" class="img-preview">
+                        <div style="flex-grow:1;">
+                            <input type="text" placeholder="Item Name" value="${item.name}" oninput="editItem('${cat}', ${i}, 'name', this.value)">
+                            <input type="number" placeholder="Price (Ex: 5.500)" value="${item.price}" oninput="editItem('${cat}', ${i}, 'price', this.value)">
+                            <input type="text" placeholder="Image URL" value="${item.image}" oninput="editItem('${cat}', ${i}, 'image', this.value); renderEditor();">
+                            <textarea placeholder="Description..." oninput="editItem('${cat}', ${i}, 'description', this.value)">${item.description}</textarea>
+                            <button class="delete-btn" onclick="deleteItem('${cat}', ${i})">× Remove Item</button>
+                        </div>
+                    </div>`;
+                });
+                html += `</div>
+                    <button class="btn" style="background:#eee; width:100%; margin-top:10px;" onclick="addItem('${cat}')">+ Add Item</button>
+                    <button class="delete-btn" style="width:100%; margin-top:15px;" onclick="deleteCat('${cat}')">Delete Category</button>
+                </div>`;
+                container.innerHTML += html;
+            }
+        };
+
+        window.editItem = (cat, i, field, val) => { menuData[cat][i][field] = val; };
+        window.addItem = (cat) => { menuData[cat].push({name:'', price:'', image:'', description:''}); renderEditor(); };
+        window.addCategory = () => { const n = prompt("New Category Name:"); if(n) { menuData[n] = []; renderEditor(); } };
+        window.deleteItem = (cat, i) => { menuData[cat].splice(i,1); renderEditor(); };
+        window.deleteCat = (cat) => { if(confirm("Delete category?")) { delete menuData[cat]; renderEditor(); } };
+        window.renameCat = (oldN, newN) => { if(newN && newN !== oldN) { menuData[newN] = menuData[oldN]; delete menuData[oldN]; renderEditor(); } };
+
+        window.saveMenu = async () => {
+            try {
+                await setDoc(doc(db, "settings", "menu"), { categories: menuData });
+                alert("Cloud Updated Successfully!");
+            } catch (e) { alert("Save Error: " + e.message); }
+        };
+    </script>
+</body>
+</html>
